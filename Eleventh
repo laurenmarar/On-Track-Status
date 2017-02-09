@@ -1,0 +1,155 @@
+[Eleventh Grade On Track]:
+SELECT 
+// CASE WHEN English<3 or Math<3 or [Social Studies]<3 or Science<3 
+// 	or (English + Math + [Social Studies] + Science + [World Lang] + [Health/Fitness] + Art + Music + Electives)<18 
+//     then 'Off Track' else 'On Track' end as [Eleventh On Track Status], 
+CASE WHEN coalesce(English,0)<3 or coalesce(Math,0)<3 or coalesce([Social Studies],0)<3 or coalesce(Science,0)<3 
+or (coalesce(English,0) + coalesce(Math,0) + coalesce([Social Studies],0) + coalesce(Science,0) + coalesce([World Lang],0) + coalesce([Health/Fitness],0) + 
+coalesce(Art,0) + coalesce(Music,0) + coalesce(Electives,0))<18 
+   then 'Off Track' else 'On Track' end as [Eleventh On Track Status], 
+EleventhCST.studentNumber as [Eleventh ID],
+EleventhcreditsTable.firstName as [Eleventh firstName],
+EleventhcreditsTable.lastName as [Eleventh lastName],
+EleventhcreditsTable.English as [Eleventh English],
+EleventhcreditsTable.Math as [Eleventh Math],
+EleventhcreditsTable.[Social Studies] as [Eleventh Social Studies],
+EleventhcreditsTable.Science as [Eleventh Science],
+EleventhcreditsTable.[World Lang] as [Eleventh World Lang],
+EleventhcreditsTable.[Health/Fitness] as [Eleventh Health/Fitness],
+EleventhcreditsTable.Art as [Eleventh Art],
+EleventhcreditsTable.Music as [Eleventh Music],
+EleventhcreditsTable.Electives as [Eleventh Electives],
+[Eleventh CS Total]
+
+FROM
+(
+	select personID, firstName, lastName, 
+	[5] as English,
+	[7] as Math,
+	[10] as [Social Studies],
+	[9] as Science,
+	[11] as [World Lang],
+	[6] as [Health/Fitness],
+	[3] as Art,
+	[8] as Music,
+	[4] as Electives	
+	 from
+		(select* from
+			(select
+				r.personID, s.firstName,s.lastName,gtc.standardID,
+				case 
+					when gs.progresspercent>=60.5 then gtc.credit 
+					when gs.progresspercent<60.5 then 0.000
+					when gs.progresspercent IS NULL then gtc.credit
+					end as creditsEarned
+				from v_SectionSchedule ss
+				join roster r on ss.sectionID=r.sectionID and (r.startdate<=getdate() or r.startdate IS NULL) and (r.enddate>=getdate() or r.enddate IS NULL)
+				join section sec on sec.sectionID=r.sectionID
+				join course c on c.courseID=sec.courseID
+				join gradingTaskCredit gtc on gtc.courseID=c.courseID and gtc.credit IS NOT NULL
+				join student s on r.personID=s.personID and s.activeYear=1
+				join calendar cal on cal.calendarID=ss.calendarID and cal.endyear=s.endyear
+				join trial t on ss.trialID=t.trialID and t.active=1 
+				left join v_GradingScores gs on gs.sectionID=r.sectionID and gs.personID=r.personID and task='Final Grade'
+				) as [Current]
+		UNION ALL
+		select * from(
+			select tcr.personID,s.firstName,s.lastName,tcr.standardID,
+					tcr.creditsEarned
+				from TranscriptCredit tcr 
+				join CurriculumStandard cs on tcr.standardID=cs.standardID and cs.parentID=1
+				join TranscriptCourse tco on tcr.transcriptID=tco.transcriptID
+				join student s on s.personID=tcr.personID and s.activeYear=1
+			) as [Past]
+		) as sourceTable
+	PIVOT
+	(
+	sum([creditsEarned])
+	for [standardID] in ([3],[4],[5],[6],[7],[8],[9],[10],[11])
+	) as credits
+) as EleventhcreditsTable
+
+join
+
+(
+	select * from (
+			select personID, 
+			displayValue, 
+			case when sum(creditsEarned) >= credits then 1 else 0 end as metReq
+			from
+				(
+				select tcr.personID, tcr.creditsEarned, tcr.courseNumber, req.*
+				from 
+				(
+				select* from
+					(select
+						r.personID, s.firstName,s.lastName,gtc.standardID,c.number as courseNumber,
+						case 
+							when gs.progresspercent>=60.5 then gtc.credit 
+							when gs.progresspercent<60.5 then 0.000
+							when gs.progresspercent IS NULL then gtc.credit
+							end as creditsEarned
+						from v_SectionSchedule ss
+						join roster r on ss.sectionID=r.sectionID and (r.startdate<=getdate() or r.startdate IS NULL) and (r.enddate>=getdate() or r.enddate IS NULL)
+						join section sec on sec.sectionID=r.sectionID
+						join course c on c.courseID=sec.courseID
+						join gradingTaskCredit gtc on gtc.courseID=c.courseID and gtc.credit IS NOT NULL
+						join student s on r.personID=s.personID and s.activeYear=1
+						join calendar cal on cal.calendarID=ss.calendarID and cal.endyear=s.endyear
+						join trial t on ss.trialID=t.trialID and t.active=1 
+						left join v_GradingScores gs on gs.sectionID=r.sectionID and gs.personID=r.personID and task='Final Grade'
+						) as [Current]
+				UNION ALL
+				select * from
+					(
+					select tcr.personID,s.firstName,s.lastName,tcr.standardID,tco.courseNumber,
+							tcr.creditsEarned
+						from TranscriptCredit tcr 
+						join CurriculumStandard cs on tcr.standardID=cs.standardID and cs.parentID=1
+						join TranscriptCourse tco on tcr.transcriptID=tco.transcriptID
+						join student s on s.personID=tcr.personID and s.activeYear=1
+					) as [Past]
+				) tcr 
+				join ProgramParticipation pp on pp.personID=tcr.personID
+				join CourseRequirement req on req.courseNumberString like '%'+courseNumber+'%' and pp.programID=req.programID
+				) as tt
+			group by personID, credits, displayValue
+			) as pReq
+	PIVOT
+	(
+	sum([metReq])
+	for [displayValue] in (
+[Algebra I],
+[Algebra II],
+[Biology],
+[Chemistry],
+[DC History],
+[Geometry],
+[Government],
+[Physics],
+[US History],
+[World History])
+) as courseReqs
+) EleventhcourseReqTable
+on EleventhcreditsTable.personID=EleventhcourseReqTable.personID
+
+JOIN
+
+	(select * from (
+	select s.personID,s.studentNumber,firstName,lastName,sum(cast(cs.value as float)) as [Eleventh CS Total] 
+	from student s
+	left join customstudent cs on s.personID=cs.personID and attributeID=527
+	where calendarID=37
+	group by firstName,lastName,s.studentNumber,s.personID
+	) as [EleventhCommunityService]
+	) EleventhCST 
+	on EleventhcreditsTable.personID=EleventhCST.personID
+
+JOIN student student on student.personID=EleventhcourseReqTable.personID and student.activeYear=1 and (student.endDate>getDate() or student.endDate IS NULL)
+JOIN 
+graduation g on g.personID=student.personID and cohortYearNCLB = 2018
+
+LEFT JOIN customStudent cs2 on student.enrollmentID=cs2.enrollmentID and attributeID=573 WHERE cs2.value IS NULL and calendarID=37
+
+order by [Eleventh On Track Status],EleventhcreditsTable.lastName
+;
